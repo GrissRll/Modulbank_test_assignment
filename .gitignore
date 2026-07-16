@@ -1,0 +1,4 @@
+.venv
+.uv-cache
+.idea
+.env
