@@ -2,3 +2,5 @@
 .uv-cache
 .idea
 .env
+*__pycache__/
+*.py[cod]
