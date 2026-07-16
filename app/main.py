@@ -4,15 +4,21 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.core.config import get_settings
+from app.db.session import create_engine_and_session_maker
 
 
 @asynccontextmanager
 async def lifespan(application: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     application.state.settings = settings
+    engine, async_session_maker = create_engine_and_session_maker(settings.database_url)
 
-    yield
+    application.state.async_session_maker = async_session_maker
 
+    try:
+        yield
+    finally:
+        await engine.dispose()
 
 app = FastAPI(title="Payment Service", lifespan=lifespan)
 
