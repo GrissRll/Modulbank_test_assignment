@@ -21,11 +21,20 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
     finally:
         await engine.dispose()
 
-app = FastAPI(title="Payment Service", lifespan=lifespan)
 
-app.include_router(health_router)
+def create_app() -> FastAPI:
+    application = FastAPI(
+        title="Payment Service",
+        lifespan=lifespan,
+    )
+
+    application.include_router(health_router)
+
+    @application.get("/")
+    async def index():
+        return {"message": "application worked"}
+
+    return application
 
 
-@app.get("/")
-async def index():
-    return {"message": "application worked"}
+app = create_app()
