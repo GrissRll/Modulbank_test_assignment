@@ -5,6 +5,7 @@ from fastapi import FastAPI
 
 from app.core.config import get_settings
 from app.db.session import create_engine_and_session_maker
+from app.api.routes.health import router as health_router
 
 
 @asynccontextmanager
@@ -21,6 +22,8 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         await engine.dispose()
 
 app = FastAPI(title="Payment Service", lifespan=lifespan)
+
+app.include_router(health_router)
 
 
 @app.get("/")
