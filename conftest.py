@@ -2,12 +2,14 @@ import os
 
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import (
     create_async_engine,
     async_sessionmaker,
     AsyncSession,
 )
 import pytest_asyncio
+from unittest.mock import AsyncMock
 
 from app.main import create_app
 from app.api.dependency import get_session
@@ -61,3 +63,23 @@ async def client(app_test: FastAPI):
     transport = ASGITransport(app=app_test)
     async with AsyncClient(transport=transport, base_url="http://testserver") as c:
         yield c
+
+@pytest_asyncio.fixture
+async def broken_db():
+    app = create_app()
+
+    broken_session = AsyncMock()
+    broken_session.execute.side_effect = OperationalError(
+        statement="SELECT 1",
+        params=None,
+        orig=ConnectionError("Database is unavailable")
+    )
+
+    async def override_get_db():
+        yield broken_session
+
+    app.dependency_overrides[get_session] = override_get_db
+
+    yield app, broken_session
+
+    app.dependency_overrides.clear()
