@@ -6,6 +6,7 @@ from sqlalchemy import (
     Text,
     CheckConstraint,
     func,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -30,7 +31,11 @@ class Currency(StrEnum):
 class Operation(Base):
     __tablename__ = "operations"
 
-    operation_id: Mapped[str] = mapped_column(String(120), primary_key=True)
+    operation_id: Mapped[str] = mapped_column(
+        String(120),
+        primary_key=True,
+        server_default=text("'operation-' || nextval('operation_id_seq')")
+    )
     amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
     currency: Mapped[Currency] = mapped_column(
         Enum(Currency, name="currency"), nullable=False
