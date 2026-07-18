@@ -1,0 +1,81 @@
+name: modulbank-test-assignment-integration
+services:
+  postgres-integration:
+    image: postgres:18-alpine
+
+    environment:
+      POSTGRES_DB: integration_db
+      POSTGRES_USER: integration_user
+      POSTGRES_PASSWORD: integration_pass
+
+    healthcheck:
+      test: [ "CMD-SHELL","pg_isready -U integration_user -d integration_db" ]
+      interval: 2s
+      timeout: 3s
+      retries: 10
+    tmpfs:
+      - /var/lib/postgresql
+
+  migrate-integration:
+    build:
+      context: .
+      target: development
+    command: [ "alembic", "upgrade", "head" ]
+    environment:
+      DATABASE_URL: postgresql+asyncpg://integration_user:integration_pass@postgres-integration:5432/integration_db
+      PROVIDER_URL: http://provider-simulator-integration:8081
+    depends_on:
+      postgres-integration:
+        condition: service_healthy
+
+  candidate-service-integration:
+    build:
+      context: .
+      target: development
+
+    environment:
+      DATABASE_URL: postgresql+asyncpg://integration_user:integration_pass@postgres-integration:5432/integration_db
+      PROVIDER_URL: http://provider-simulator-integration:8081
+
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health/ready')" ]
+
+      interval: 3s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+    depends_on:
+      migrate-integration:
+        condition: service_completed_successfully
+      postgres-integration:
+        condition: service_started
+
+  provider-simulator-integration:
+    image: ghcr.io/fintech-dev-lab/internship-provider-simulator:v0.2.0
+
+    environment:
+      CALLBACK_URL: http://candidate-service-integration:8080/receipts
+
+    ports:
+      - "8082:8081"
+    depends_on:
+      candidate-service-integration:
+        condition: service_started
+
+  integration-tests:
+    build:
+      context: .
+      target: development
+    command: [ "pytest", "-v", "-m", "integration" ]
+    environment:
+      BASE_URL: http://candidate-service-integration:8080
+      PROVIDER_URL: http://provider-simulator-integration:8081
+    depends_on:
+      candidate-service-integration:
+        condition: service_healthy
+      provider-simulator-integration:
+        condition: service_started
+    volumes:
+      - ./tests:/app/tests
+      - ./pytest.ini:/app/pytest.ini

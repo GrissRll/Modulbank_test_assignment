@@ -10,8 +10,6 @@ services:
       POSTGRES_USER: payment_user
       POSTGRES_PASSWORD: payment_pass
 
-    ports:
-      - "${POSTGRES_PORT}:5432"
 
 
     healthcheck:
@@ -27,12 +25,11 @@ services:
     build:
       context: .
       target: development
-    command: ["pytest", "-v"]
+    command: [ "pytest", "-v", "-m",  "not integration" ]
 
     environment:
       TEST_DATABASE_URL: postgresql+asyncpg://payment_user:payment_pass@postgres-test:5432/payment_test
       DATABASE_URL: postgresql+asyncpg://payment_user:payment_pass@postgres-test:5432/payment_test
-      PROVIDER_URL: http://provider-test:8081
 
     depends_on:
       postgres-test:
@@ -42,6 +39,3 @@ services:
       - ./tests:/app/tests
       - ./conftest.py:/app/conftest.py
       - ./pytest.ini:/app/pytest.ini
-
-
-
