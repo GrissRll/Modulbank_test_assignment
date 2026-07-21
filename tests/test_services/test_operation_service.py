@@ -5,7 +5,10 @@ import pytest
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.exceptions.units.operation_exception import OperationExistingError
+from app.exceptions.units.operation_exception import (
+    OperationExistingError,
+    OperationNotFoundError,
+)
 from app.models.operation import Currency, Operation, OperationStatus
 from app.repositories.dispatch import PaymentDispatchRepository
 from app.repositories.operation_event import OperationEventRepository
@@ -118,3 +121,35 @@ async def test_register_operation_rolls_back_integrity_error(
     assert exc_info.value.__cause__ is integrity_error
     db_session.rollback.assert_awaited_once_with()
     db_session.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_get_operation_by_id_returns_operation(
+    service, operation_repository
+):
+    operation = Operation(
+        operation_id="operation-1",
+        amount=Decimal("100.00"),
+        currency=Currency.RUB,
+        status=OperationStatus.CREATED,
+    )
+    operation_repository.get_operation_by_id.return_value = operation
+
+    result = await service.get_operation_by_id("operation-1")
+
+    assert result is operation
+    operation_repository.get_operation_by_id.assert_awaited_once_with("operation-1")
+
+
+@pytest.mark.asyncio
+async def test_get_operation_by_id_raises_when_operation_does_not_exist(
+    service, operation_repository
+):
+    operation_repository.get_operation_by_id.return_value = None
+
+    with pytest.raises(OperationNotFoundError):
+        await service.get_operation_by_id("missing-operation")
+
+    operation_repository.get_operation_by_id.assert_awaited_once_with(
+        "missing-operation"
+    )

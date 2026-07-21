@@ -70,3 +70,31 @@ async def test_create_operation_rejects_too_long_description(client):
     response = await client.post("/operations/", json=payload)
 
     assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_get_operation_returns_200_and_current_state(client):
+    create_response = await client.post(
+        "/operations/", json=operation_payload("operation-get")
+    )
+
+    response = await client.get("/operations/operation-get")
+
+    assert create_response.status_code == 201
+    assert response.status_code == 200
+    assert response.json() == {
+        "operation_id": "operation-get",
+        "amount": "100.00",
+        "currency": "RUB",
+        "description": "Order payment",
+        "status": "CREATED",
+        "provider_payment_id": None,
+    }
+
+
+@pytest.mark.asyncio
+async def test_get_operation_returns_404_when_operation_does_not_exist(client):
+    response = await client.get("/operations/missing-operation")
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Operation not found."}
