@@ -7,8 +7,10 @@ from app.repositories.operation_event import OperationEventRepository
 
 from app.schemas.operation_schemas import OperationSchema
 from app.models.operation import Operation as OperationModel
-from app.exceptions.units.operation_exception import OperationExistingError
-
+from app.exceptions.units.operation_exception import (
+    OperationExistingError,
+    OperationNotFoundError,
+)
 
 class OperationService:
 
@@ -41,3 +43,11 @@ class OperationService:
             raise OperationExistingError() from exc
         return operation
 
+    async def get_operation_by_id(self, operation_id: str) -> OperationModel:
+
+        existing_operation = await self.operation_repo.get_operation_by_id(operation_id)
+
+        if existing_operation is None:
+            raise OperationNotFoundError
+
+        return existing_operation
