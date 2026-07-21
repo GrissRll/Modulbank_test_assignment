@@ -7,6 +7,7 @@ from app.core.config import get_settings
 from app.db.session import create_engine_and_session_maker
 from app.api.routes.health import router as health_router
 from app.exceptions.handler_registration import handlers_registration
+from app.api.routes.operations_routers import router as operations_router
 
 
 @asynccontextmanager
@@ -32,6 +33,7 @@ def create_app() -> FastAPI:
     handlers_registration(application)
 
     application.include_router(health_router)
+    application.include_router(operations_router)
 
     @application.get("/")
     async def index():
