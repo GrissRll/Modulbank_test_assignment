@@ -14,6 +14,7 @@ async def test_create_payment_dispatch(async_session_maker):
     async with async_session_maker() as session:
         async with session.begin():
             operation = OperationModel(
+                operation_id="operation-create-dispatch",
                 amount=Decimal("1111.00"),
                 currency=Currency.RUB,
                 description="Оплата заказа",
@@ -65,6 +66,7 @@ async def test_create_payment_dispatch(async_session_maker):
 async def test_payment_dispatch_defaults(async_session_maker):
     async with async_session_maker() as session:
         operation = OperationModel(
+            operation_id="operation-defaults",
             amount=Decimal("100.00"),
             currency=Currency.RUB,
         )
@@ -105,6 +107,7 @@ async def test_payment_dispatch_requires_existing_operation(async_session_maker)
 async def test_payment_dispatch_operation_id_is_unique(async_session_maker):
     async with async_session_maker() as session:
         operation = OperationModel(
+            operation_id="operation-unique-dispatch",
             amount=Decimal("100.00"),
             currency=Currency.RUB,
         )
@@ -134,10 +137,12 @@ async def test_payment_dispatch_operation_id_is_unique(async_session_maker):
 async def test_payment_dispatch_idempotency_key_is_unique(async_session_maker):
     async with async_session_maker() as session:
         first_operation = OperationModel(
+            operation_id="operation-first",
             amount=Decimal("100.00"),
             currency=Currency.RUB,
         )
         second_operation = OperationModel(
+            operation_id="operation-second",
             amount=Decimal("200.00"),
             currency=Currency.RUB,
         )
@@ -167,6 +172,7 @@ async def test_payment_dispatch_idempotency_key_is_unique(async_session_maker):
 async def test_payment_dispatch_payload_is_required(async_session_maker):
     async with async_session_maker() as session:
         operation = OperationModel(
+            operation_id="operation-payload-required",
             amount=Decimal("100.00"),
             currency=Currency.RUB,
         )
@@ -187,6 +193,7 @@ async def test_payment_dispatch_payload_is_required(async_session_maker):
 async def test_payment_dispatch_is_deleted_with_operation(async_session_maker):
     async with async_session_maker() as session:
         operation = OperationModel(
+            operation_id="operation-cascade-delete",
             amount=Decimal("100.00"),
             currency=Currency.RUB,
         )

@@ -1,7 +1,7 @@
 import pytest
 from decimal import Decimal
 
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SAWarning
 
 from app.models.operation import Currency, Operation as OperationModel, OperationStatus
 
@@ -10,6 +10,7 @@ from app.models.operation import Currency, Operation as OperationModel, Operatio
 async def test_create_operation_success(async_session_maker):
     async with async_session_maker() as session:
         operation = OperationModel(
+            operation_id="operation-1",
             amount=Decimal("1111.00"),
             currency=Currency.RUB,
             description="Оплата заказа"
@@ -29,6 +30,7 @@ async def test_create_operation_success(async_session_maker):
 async def test_create_operation_without_description(async_session_maker):
     async with async_session_maker() as session:
         operation = OperationModel(
+            operation_id="operation-1",
             amount=Decimal("100.00"),
             currency=Currency.RUB,
         )
@@ -40,28 +42,24 @@ async def test_create_operation_without_description(async_session_maker):
 
 
 @pytest.mark.asyncio
-async def test_operation_id_is_generated_sequentially(async_session_maker):
+async def test_operation_id_is_required(async_session_maker):
     async with async_session_maker() as session:
-        first_operation = OperationModel(
+        operation = OperationModel(
             amount=Decimal("100.00"),
             currency=Currency.RUB,
         )
-        second_operation = OperationModel(
-            amount=Decimal("200.00"),
-            currency=Currency.RUB,
-        )
+        session.add(operation)
 
-        session.add_all([first_operation, second_operation])
-        await session.flush()
-
-        assert first_operation.operation_id == "operation-1"
-        assert second_operation.operation_id == "operation-2"
+        with pytest.warns(SAWarning):
+            with pytest.raises(IntegrityError):
+                await session.flush()
 
 
 @pytest.mark.asyncio
 async def test_operation_amount_is_required(async_session_maker):
     async with async_session_maker() as session:
         operation = OperationModel(
+            operation_id="operation-1",
             amount=None,
             currency=Currency.RUB,
         )
@@ -75,6 +73,7 @@ async def test_operation_amount_is_required(async_session_maker):
 async def test_operation_currency_is_required(async_session_maker):
     async with async_session_maker() as session:
         operation = OperationModel(
+            operation_id="operation-1",
             amount=Decimal("100.00"),
             currency=None,
         )
@@ -89,6 +88,7 @@ async def test_operation_currency_is_required(async_session_maker):
 async def test_operation_amount_must_be_positive(async_session_maker, amount):
     async with async_session_maker() as session:
         operation = OperationModel(
+            operation_id="operation-1",
             amount=amount,
             currency=Currency.RUB,
         )
@@ -125,6 +125,7 @@ async def test_operation_id_is_unique(async_session_maker):
 async def test_operation_has_default_status_and_created_at(async_session_maker):
     async with async_session_maker() as session:
         operation = OperationModel(
+            operation_id="operation-1",
             amount=Decimal("100.00"),
             currency=Currency.RUB,
         )

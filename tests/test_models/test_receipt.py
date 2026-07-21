@@ -12,8 +12,12 @@ from app.models.receipt import (
 )
 
 
-def create_operation(amount: str = "100.00") -> OperationModel:
+def create_operation(
+    amount: str = "100.00",
+    operation_id: str = "operation-1",
+) -> OperationModel:
     return OperationModel(
+        operation_id=operation_id,
         amount=Decimal(amount),
         currency=Currency.RUB,
     )

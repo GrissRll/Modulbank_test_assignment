@@ -22,6 +22,7 @@ def repository(db_session):
 @pytest_asyncio.fixture
 async def operation(db_session):
     operation = Operation(
+        operation_id="operation-existing",
         amount=Decimal("100.00"),
         currency=Currency.RUB,
         description="Order payment",
@@ -51,6 +52,7 @@ async def test_get_operation_by_id_returns_none_when_operation_does_not_exist(
 @pytest.mark.asyncio
 async def test_create_persists_and_returns_operation(repository, db_session):
     operation_data = {
+        "operation_id": "operation-created",
         "amount": Decimal("250.50"),
         "currency": Currency.RUB,
         "description": "Invoice payment",

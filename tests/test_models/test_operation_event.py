@@ -7,8 +7,12 @@ from app.models.operation import Currency, Operation as OperationModel, Operatio
 from app.models.operation_event import OperationEvent as OperationEventModel
 
 
-def create_operation(amount: str = "100.00") -> OperationModel:
+def create_operation(
+    amount: str = "100.00",
+    operation_id: str = "operation-1",
+) -> OperationModel:
     return OperationModel(
+        operation_id=operation_id,
         amount=Decimal(amount),
         currency=Currency.RUB,
     )
@@ -109,8 +113,8 @@ async def test_same_event_id_is_allowed_for_different_operations(
     async_session_maker,
 ):
     async with async_session_maker() as session:
-        first_operation = create_operation("100.00")
-        second_operation = create_operation("200.00")
+        first_operation = create_operation("100.00", "operation-first")
+        second_operation = create_operation("200.00", "operation-second")
         session.add_all([first_operation, second_operation])
         await session.flush()
 

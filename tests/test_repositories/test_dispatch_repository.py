@@ -24,6 +24,7 @@ def repository(db_session):
 @pytest_asyncio.fixture
 async def operation(db_session):
     operation = Operation(
+        operation_id="operation-dispatch",
         amount=Decimal("100.00"),
         currency=Currency.RUB,
         description="Order payment",
