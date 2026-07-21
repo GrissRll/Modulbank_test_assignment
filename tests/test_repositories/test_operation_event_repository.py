@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from decimal import Decimal
 
 import pytest
@@ -85,3 +86,63 @@ async def test_create_persists_status_transition(repository, db_session, operati
     assert persisted_event.from_status == OperationStatus.CREATED
     assert persisted_event.to_status == OperationStatus.PROCESSING
     assert persisted_event.message == "Operation processing started"
+
+
+@pytest.mark.asyncio
+async def test_get_events_returns_only_operation_events_in_order(
+    repository, db_session, operation
+):
+    another_operation = Operation(
+        operation_id="operation-another",
+        amount=Decimal("200.00"),
+        currency=Currency.RUB,
+    )
+    db_session.add(another_operation)
+    await db_session.flush()
+    occurred_at = datetime(2030, 1, 1, 12, 30, tzinfo=timezone.utc)
+
+    await repository.create(
+        {
+            "operation_id": operation.operation_id,
+            "event_id": 2,
+            "event_type": OperationStatus.PROCESSING,
+            "from_status": OperationStatus.CREATED,
+            "to_status": OperationStatus.PROCESSING,
+            "message": "Operation processing started",
+            "occurred_at": occurred_at,
+        }
+    )
+    await repository.create(
+        {
+            "operation_id": operation.operation_id,
+            "event_id": 1,
+            "event_type": OperationStatus.CREATED,
+            "from_status": None,
+            "to_status": OperationStatus.CREATED,
+            "message": "Operation created",
+            "occurred_at": occurred_at,
+        }
+    )
+    await repository.create(
+        {
+            "operation_id": another_operation.operation_id,
+            "event_id": 1,
+            "event_type": OperationStatus.CREATED,
+            "from_status": None,
+            "to_status": OperationStatus.CREATED,
+            "message": "Another operation created",
+            "occurred_at": occurred_at,
+        }
+    )
+
+    result = await repository.get_events(operation.operation_id)
+
+    assert [event.event_id for event in result] == [1, 2]
+    assert all(event.operation_id == operation.operation_id for event in result)
+
+
+@pytest.mark.asyncio
+async def test_get_events_returns_empty_sequence(repository):
+    result = await repository.get_events("missing-operation")
+
+    assert list(result) == []

@@ -10,6 +10,7 @@ from app.exceptions.units.operation_exception import (
     OperationNotFoundError,
 )
 from app.models.operation import Currency, Operation, OperationStatus
+from app.models.operation_event import OperationEvent
 from app.repositories.dispatch import PaymentDispatchRepository
 from app.repositories.operation_event import OperationEventRepository
 from app.repositories.operations import OperationRepository
@@ -153,3 +154,47 @@ async def test_get_operation_by_id_raises_when_operation_does_not_exist(
     operation_repository.get_operation_by_id.assert_awaited_once_with(
         "missing-operation"
     )
+
+
+@pytest.mark.asyncio
+async def test_get_events_by_operation_id_returns_events(
+    service, operation_repository, event_repository
+):
+    operation = Operation(
+        operation_id="operation-1",
+        amount=Decimal("100.00"),
+        currency=Currency.RUB,
+    )
+    events = [
+        OperationEvent(
+            operation_id="operation-1",
+            event_id=1,
+            event_type=OperationStatus.CREATED,
+            from_status=None,
+            to_status=OperationStatus.CREATED,
+            message="Operation created",
+        )
+    ]
+    operation_repository.get_operation_by_id.return_value = operation
+    event_repository.get_events.return_value = events
+
+    result = await service.get_events_by_operation_id("operation-1")
+
+    assert result is events
+    operation_repository.get_operation_by_id.assert_awaited_once_with("operation-1")
+    event_repository.get_events.assert_awaited_once_with(operation_id="operation-1")
+
+
+@pytest.mark.asyncio
+async def test_get_events_by_operation_id_raises_when_operation_does_not_exist(
+    service, operation_repository, event_repository
+):
+    operation_repository.get_operation_by_id.return_value = None
+
+    with pytest.raises(OperationNotFoundError):
+        await service.get_events_by_operation_id("missing-operation")
+
+    operation_repository.get_operation_by_id.assert_awaited_once_with(
+        "missing-operation"
+    )
+    event_repository.get_events.assert_not_awaited()

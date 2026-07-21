@@ -1,8 +1,10 @@
+from datetime import datetime, timezone
 from decimal import Decimal
 
 import pytest
 
 from app.models.operation import Currency, Operation, OperationStatus
+from app.models.operation_event import OperationEvent
 
 
 def operation_payload(operation_id: str = "operation-1") -> dict:
@@ -95,6 +97,86 @@ async def test_get_operation_returns_200_and_current_state(client):
 @pytest.mark.asyncio
 async def test_get_operation_returns_404_when_operation_does_not_exist(client):
     response = await client.get("/operations/missing-operation")
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Operation not found."}
+
+
+@pytest.mark.asyncio
+async def test_get_operation_events_returns_200_and_ordered_events(
+    client, async_session_maker
+):
+    create_response = await client.post(
+        "/operations/", json=operation_payload("operation-events")
+    )
+    occurred_at = datetime(2030, 1, 1, 12, 30, tzinfo=timezone.utc)
+    async with async_session_maker() as session:
+        session.add_all(
+            [
+                OperationEvent(
+                    operation_id="operation-events",
+                    event_id=2,
+                    event_type=OperationStatus.PROCESSING,
+                    from_status=OperationStatus.CREATED,
+                    to_status=OperationStatus.PROCESSING,
+                    message="Operation processing started",
+                    occurred_at=occurred_at,
+                ),
+                OperationEvent(
+                    operation_id="operation-events",
+                    event_id=1,
+                    event_type=OperationStatus.CREATED,
+                    from_status=None,
+                    to_status=OperationStatus.CREATED,
+                    message="Operation created",
+                    occurred_at=occurred_at,
+                ),
+            ]
+        )
+        await session.commit()
+
+    response = await client.get("/operations/operation-events/events")
+
+    assert create_response.status_code == 201
+    assert response.status_code == 200
+    assert response.json() == [
+        {
+            "operation_id": "operation-events",
+            "event_id": 1,
+            "event_type": "CREATED",
+            "from_status": None,
+            "to_status": "CREATED",
+            "message": "Operation created",
+            "occurred_at": "2030-01-01T12:30:00Z",
+        },
+        {
+            "operation_id": "operation-events",
+            "event_id": 2,
+            "event_type": "PROCESSING",
+            "from_status": "CREATED",
+            "to_status": "PROCESSING",
+            "message": "Operation processing started",
+            "occurred_at": "2030-01-01T12:30:00Z",
+        },
+    ]
+
+
+@pytest.mark.asyncio
+async def test_get_operation_events_returns_empty_list(client):
+    create_response = await client.post(
+        "/operations/", json=operation_payload("operation-without-events")
+    )
+
+    response = await client.get("/operations/operation-without-events/events")
+
+    assert create_response.status_code == 201
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+@pytest.mark.asyncio
+async def test_get_operation_events_returns_404_for_missing_operation(client):
+    response = await client.get("/operations/missing-operation/events")
 
     assert response.status_code == 404
     assert response.json() == {"detail": "Operation not found."}
