@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -7,10 +8,12 @@ from app.repositories.operation_event import OperationEventRepository
 
 from app.schemas.operation_schemas import OperationSchema
 from app.models.operation import Operation as OperationModel
+from app.models.operation_event import OperationEvent as EventModel
 from app.exceptions.units.operation_exception import (
     OperationExistingError,
     OperationNotFoundError,
 )
+
 
 class OperationService:
 
@@ -51,3 +54,15 @@ class OperationService:
             raise OperationNotFoundError
 
         return existing_operation
+
+    async def get_events_by_operation_id(
+        self, operation_id: str
+    ) -> Sequence[EventModel]:
+        existing_operation = await self.operation_repo.get_operation_by_id(operation_id)
+
+        if existing_operation is None:
+            raise OperationNotFoundError
+
+        events = await self.event_repo.get_events(operation_id=operation_id)
+
+        return events

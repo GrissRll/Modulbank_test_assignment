@@ -7,6 +7,7 @@ from app.schemas.operation_schemas import (
     OperationSchema as CreateOperationSchema,
     ResponseOperationSchema,
 )
+from app.schemas.events_schemas import ResponseEventSchema
 from app.services.operation_service import OperationService
 
 router = APIRouter(prefix="/operations", tags=["operations"])
@@ -29,3 +30,12 @@ async def get_operation_by_id(
     id: str, operation_service: OperationService = Depends(get_operation_service)
 ):
     return await operation_service.get_operation_by_id(operation_id=id)
+
+
+@router.get(
+    "/{id}/events", response_model=list[ResponseEventSchema], status_code=status.HTTP_200_OK
+)
+async def get_operation_event(
+    id: str, operation_service: OperationService = Depends(get_operation_service)
+):
+    return await operation_service.get_events_by_operation_id(operation_id=id)

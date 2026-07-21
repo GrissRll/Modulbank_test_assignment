@@ -1,7 +1,7 @@
-from sqlalchemy import select, Sequence
+from collections.abc import Sequence
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.operation_event import OperationEvent as EventModel
-from app.models.operation import OperationStatus
 
 
 class OperationEventRepository:
@@ -16,3 +16,15 @@ class OperationEventRepository:
         self.db.add(event)
         await self.db.flush()
         return event
+
+    async def get_events(self, operation_id: str) -> Sequence[EventModel]:
+
+        stmt = (
+            select(EventModel)
+            .where(EventModel.operation_id == operation_id)
+            .order_by(EventModel.occurred_at, EventModel.event_id)
+        )
+
+        events = (await self.db.scalars(stmt)).all()
+
+        return events
