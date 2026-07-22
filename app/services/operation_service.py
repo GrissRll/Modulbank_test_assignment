@@ -7,7 +7,7 @@ from app.repositories.dispatch import PaymentDispatchRepository
 from app.repositories.operation_event import OperationEventRepository
 
 from app.schemas.operation_schemas import OperationSchema
-from app.models.operation import Operation as OperationModel
+from app.models.operation import Operation as OperationModel, OperationStatus
 from app.models.operation_event import OperationEvent as EventModel
 from app.exceptions.units.operation_exception import (
     OperationExistingError,
@@ -38,7 +38,18 @@ class OperationService:
         if existing_operation is not None:
             raise OperationExistingError()
         try:
+
             operation = await self.operation_repo.create(operation_data.model_dump())
+
+            event_data = {
+                "operation_id": operation.operation_id,
+                "event_id": 1,
+                "event_type": OperationStatus.CREATED,
+                "from_status": None,
+                "to_status": OperationStatus.CREATED,
+                "message": "Operation created.",
+            }
+            await self.event_repo.create(event_data)
 
             await self.db.commit()
         except IntegrityError as exc:
