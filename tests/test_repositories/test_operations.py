@@ -50,6 +50,20 @@ async def test_get_operation_by_id_returns_none_when_operation_does_not_exist(
 
 
 @pytest.mark.asyncio
+async def test_get_for_update_returns_operation(repository, operation):
+    result = await repository.get_for_update(operation.operation_id)
+
+    assert result is operation
+
+
+@pytest.mark.asyncio
+async def test_get_for_update_returns_none_when_operation_does_not_exist(repository):
+    result = await repository.get_for_update("missing-operation")
+
+    assert result is None
+
+
+@pytest.mark.asyncio
 async def test_create_persists_and_returns_operation(repository, db_session):
     operation_data = {
         "operation_id": "operation-created",

@@ -2,9 +2,11 @@ from datetime import datetime, timezone
 from decimal import Decimal
 
 import pytest
+from sqlalchemy import select
 
 from app.models.operation import Currency, Operation, OperationStatus
 from app.models.operation_event import OperationEvent
+from app.models.dispatch import PaymentDispatch
 
 
 def operation_payload(operation_id: str = "operation-1") -> dict:
@@ -183,3 +185,146 @@ async def test_get_operation_events_returns_404_for_missing_operation(client):
 
     assert response.status_code == 404
     assert response.json() == {"detail": "Operation not found."}
+
+
+@pytest.mark.asyncio
+async def test_submit_operation_returns_200_and_persists_transition(
+    client, async_session_maker
+):
+    await client.post(
+        "/operations/", json=operation_payload("operation-submit")
+    )
+
+    response = await client.post("/operations/operation-submit/submit")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "operation_id": "operation-submit",
+        "amount": "100.00",
+        "currency": "RUB",
+        "description": "Order payment",
+        "status": "PROCESSING",
+        "provider_payment_id": None,
+    }
+
+    async with async_session_maker() as session:
+        operation = await session.get(Operation, "operation-submit")
+        dispatch = await session.scalar(
+            select(PaymentDispatch).where(
+                PaymentDispatch.operation_id == "operation-submit"
+            )
+        )
+        events = list(
+            (
+                await session.scalars(
+                    select(OperationEvent)
+                    .where(OperationEvent.operation_id == "operation-submit")
+                    .order_by(OperationEvent.event_id)
+                )
+            ).all()
+        )
+
+    assert operation.status == OperationStatus.PROCESSING
+    assert dispatch is not None
+    assert dispatch.operation_id == "operation-submit"
+    assert dispatch.idempotency_key == "operation-submit"
+    assert dispatch.request_payload == {
+        "operationId": "operation-submit",
+        "amount": "100.00",
+        "currency": "RUB",
+        "description": "Order payment",
+    }
+    assert [event.event_id for event in events] == [1, 2]
+    assert events[1].from_status == OperationStatus.CREATED
+    assert events[1].to_status == OperationStatus.PROCESSING
+
+
+@pytest.mark.asyncio
+async def test_submit_operation_is_idempotent(client, async_session_maker):
+    await client.post(
+        "/operations/", json=operation_payload("operation-idempotent")
+    )
+
+    first_response = await client.post("/operations/operation-idempotent/submit")
+    second_response = await client.post("/operations/operation-idempotent/submit")
+
+    assert first_response.status_code == 200
+    assert second_response.status_code == 200
+    assert second_response.json()["status"] == "PROCESSING"
+    async with async_session_maker() as session:
+        events = (
+            await session.scalars(
+                select(OperationEvent).where(
+                    OperationEvent.operation_id == "operation-idempotent"
+                )
+            )
+        ).all()
+        assert len(events) == 2
+
+
+@pytest.mark.asyncio
+async def test_submit_operation_returns_404_when_operation_does_not_exist(client):
+    response = await client.post("/operations/missing-operation/submit")
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Operation not found."}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("operation_status", "reason"),
+    [
+        (OperationStatus.COMPLETED, "Operation already completed."),
+        (OperationStatus.REJECTED, "Operation rejected by provider."),
+    ],
+)
+async def test_submit_operation_returns_status_error_for_terminal_operation(
+    client, async_session_maker, operation_status, reason
+):
+    operation_id = f"operation-{operation_status.value.lower()}"
+    await client.post("/operations/", json=operation_payload(operation_id))
+    async with async_session_maker() as session:
+        operation = await session.get(Operation, operation_id)
+        operation.status = operation_status
+        await session.commit()
+
+    response = await client.post(f"/operations/{operation_id}/submit")
+
+    assert response.status_code == 404
+    assert response.json() == {
+        "detail": {"status:": operation_status.value, "reason": reason}
+    }
+
+
+@pytest.mark.asyncio
+async def test_submit_operation_returns_conflict_when_dispatch_already_exists(
+    client, async_session_maker
+):
+    operation_id = "operation-submit-conflict"
+    await client.post("/operations/", json=operation_payload(operation_id))
+    async with async_session_maker() as session:
+        session.add(
+            PaymentDispatch(
+                operation_id=operation_id,
+                idempotency_key=operation_id,
+                request_payload={"operationId": operation_id},
+            )
+        )
+        await session.commit()
+
+    response = await client.post(f"/operations/{operation_id}/submit")
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Operation not submitted. CONFLICT."}
+    async with async_session_maker() as session:
+        operation = await session.get(Operation, operation_id)
+        events = (
+            await session.scalars(
+                select(OperationEvent).where(
+                    OperationEvent.operation_id == operation_id
+                )
+            )
+        ).all()
+
+    assert operation.status == OperationStatus.CREATED
+    assert len(events) == 1

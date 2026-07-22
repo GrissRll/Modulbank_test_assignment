@@ -146,3 +146,45 @@ async def test_get_events_returns_empty_sequence(repository):
     result = await repository.get_events("missing-operation")
 
     assert list(result) == []
+
+
+@pytest.mark.asyncio
+async def test_get_next_event_id_returns_one_when_operation_has_no_events(
+    repository, operation
+):
+    result = await repository.get_next_event_id(operation.operation_id)
+
+    assert result == 1
+
+
+@pytest.mark.asyncio
+async def test_get_next_event_id_returns_next_id_only_for_requested_operation(
+    repository, db_session, operation
+):
+    another_operation = Operation(
+        operation_id="operation-with-more-events",
+        amount=Decimal("200.00"),
+        currency=Currency.RUB,
+    )
+    db_session.add(another_operation)
+    await db_session.flush()
+
+    for operation_id, event_id in (
+        (operation.operation_id, 1),
+        (operation.operation_id, 3),
+        (another_operation.operation_id, 10),
+    ):
+        await repository.create(
+            {
+                "operation_id": operation_id,
+                "event_id": event_id,
+                "event_type": OperationStatus.CREATED,
+                "from_status": None,
+                "to_status": OperationStatus.CREATED,
+                "message": "Operation created",
+            }
+        )
+
+    result = await repository.get_next_event_id(operation.operation_id)
+
+    assert result == 4

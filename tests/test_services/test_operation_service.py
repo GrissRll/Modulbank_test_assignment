@@ -8,6 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.exceptions.units.operation_exception import (
     OperationExistingError,
     OperationNotFoundError,
+    OperationStatusError,
+    OperationSubmitConflict,
 )
 from app.models.operation import Currency, Operation, OperationStatus
 from app.models.operation_event import OperationEvent
@@ -265,3 +267,135 @@ async def test_get_events_by_operation_id_raises_when_operation_does_not_exist(
         "missing-operation"
     )
     event_repository.get_events.assert_not_awaited()
+
+
+def make_operation(status=OperationStatus.CREATED):
+    return Operation(
+        operation_id="operation-1",
+        amount=Decimal("100.00"),
+        currency=Currency.RUB,
+        description="Order payment",
+        status=status,
+    )
+
+
+@pytest.mark.asyncio
+async def test_submit_operation_moves_created_operation_to_processing(
+    service, operation_repository, dispatch_repository, event_repository
+):
+    operation = make_operation()
+    operation_repository.get_for_update.return_value = operation
+    operation_repository.update_status.return_value = operation
+    event_repository.get_next_event_id.return_value = 2
+
+    result = await service.submit_operation("operation-1")
+
+    assert result is operation
+    operation_repository.get_for_update.assert_awaited_once_with(
+        operation_id="operation-1"
+    )
+    operation_repository.update_status.assert_awaited_once_with(
+        operation=operation, new_status=OperationStatus.PROCESSING
+    )
+    dispatch_repository.create.assert_awaited_once_with(
+        dispatch_data={
+            "operation_id": "operation-1",
+            "idempotency_key": "operation-1",
+            "request_payload": {
+                "operationId": "operation-1",
+                "amount": "100.00",
+                "currency": "RUB",
+                "description": "Order payment",
+            },
+        }
+    )
+    event_repository.create.assert_awaited_once_with(
+        {
+            "operation_id": "operation-1",
+            "event_id": 2,
+            "event_type": OperationStatus.PROCESSING,
+            "from_status": OperationStatus.CREATED,
+            "to_status": OperationStatus.PROCESSING,
+            "message": "Operation in processing.",
+        }
+    )
+
+
+@pytest.mark.asyncio
+async def test_submit_operation_is_idempotent_when_already_processing(
+    service, operation_repository, dispatch_repository, event_repository
+):
+    operation = make_operation(OperationStatus.PROCESSING)
+    operation_repository.get_for_update.return_value = operation
+
+    result = await service.submit_operation("operation-1")
+
+    assert result is operation
+    operation_repository.update_status.assert_not_awaited()
+    dispatch_repository.create.assert_not_awaited()
+    event_repository.get_next_event_id.assert_not_awaited()
+    event_repository.create.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_submit_operation_raises_when_operation_does_not_exist(
+    service, operation_repository, dispatch_repository, event_repository
+):
+    operation_repository.get_for_update.return_value = None
+
+    with pytest.raises(OperationNotFoundError):
+        await service.submit_operation("missing-operation")
+
+    operation_repository.update_status.assert_not_awaited()
+    dispatch_repository.create.assert_not_awaited()
+    event_repository.create.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("operation_status", "reason"),
+    [
+        (OperationStatus.COMPLETED, "Operation already completed."),
+        (OperationStatus.REJECTED, "Operation rejected by provider."),
+    ],
+)
+async def test_submit_operation_rejects_terminal_status(
+    service,
+    operation_repository,
+    dispatch_repository,
+    event_repository,
+    operation_status,
+    reason,
+):
+    operation_repository.get_for_update.return_value = make_operation(operation_status)
+
+    with pytest.raises(OperationStatusError) as exc_info:
+        await service.submit_operation("operation-1")
+
+    assert exc_info.value.status == operation_status
+    assert exc_info.value.reason == reason
+    operation_repository.update_status.assert_not_awaited()
+    dispatch_repository.create.assert_not_awaited()
+    event_repository.create.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_submit_operation_converts_integrity_error_to_submit_conflict(
+    service, operation_repository, dispatch_repository, event_repository
+):
+    integrity_error = IntegrityError(
+        statement="INSERT INTO payment_dispatches ...",
+        params=None,
+        orig=Exception("duplicate key"),
+    )
+    operation = make_operation()
+    operation_repository.get_for_update.return_value = operation
+    operation_repository.update_status.return_value = operation
+    event_repository.get_next_event_id.return_value = 2
+    dispatch_repository.create.side_effect = integrity_error
+
+    with pytest.raises(OperationSubmitConflict) as exc_info:
+        await service.submit_operation("operation-1")
+
+    assert exc_info.value.__cause__ is integrity_error
+    event_repository.create.assert_not_awaited()
