@@ -15,6 +15,16 @@ class OperationRepository:
         operation = await self.db.scalar(stmt)
         return operation
 
+    async def get_for_update(self, operation_id: str) -> OperationModel | None:
+
+        stmt = (
+            select(OperationModel)
+            .where(OperationModel.operation_id == operation_id)
+            .with_for_update()
+        )
+        operation = await self.db.scalar(stmt)
+        return operation
+
     async def create(self, operation_data: dict) -> OperationModel:
         """
         Insert query for creating operation on operation data

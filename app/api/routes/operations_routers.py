@@ -33,9 +33,20 @@ async def get_operation_by_id(
 
 
 @router.get(
-    "/{id}/events", response_model=list[ResponseEventSchema], status_code=status.HTTP_200_OK
+    "/{id}/events",
+    response_model=list[ResponseEventSchema],
+    status_code=status.HTTP_200_OK,
 )
 async def get_operation_event(
     id: str, operation_service: OperationService = Depends(get_operation_service)
 ):
     return await operation_service.get_events_by_operation_id(operation_id=id)
+
+
+@router.post(
+    "/{id}/submit", response_model=ResponseOperationSchema, status_code=status.HTTP_200_OK
+)
+async def submit_operation(
+    id: str, operation_service: OperationService = Depends(get_operation_service)
+):
+    return await operation_service.submit_operation(operation_id=id)

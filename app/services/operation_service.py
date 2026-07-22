@@ -12,6 +12,8 @@ from app.models.operation_event import OperationEvent as EventModel
 from app.exceptions.units.operation_exception import (
     OperationExistingError,
     OperationNotFoundError,
+    OperationStatusError,
+    OperationSubmitConflict,
 )
 
 
@@ -77,3 +79,63 @@ class OperationService:
         events = await self.event_repo.get_events(operation_id=operation_id)
 
         return events
+
+    async def submit_operation(self, operation_id: str) -> OperationModel:
+
+        try:
+            async with self.db.begin():
+                operation = await self.operation_repo.get_for_update(
+                    operation_id=operation_id
+                )
+
+                if operation is None:
+                    raise OperationNotFoundError()
+
+                if operation.status == OperationStatus.PROCESSING:
+                    return operation
+
+                if operation.status == OperationStatus.COMPLETED:
+                    raise OperationStatusError(
+                        status=OperationStatus.COMPLETED,
+                        reason="Operation already completed.",
+                    )
+
+                if operation.status == OperationStatus.REJECTED:
+                    raise OperationStatusError(
+                        status=OperationStatus.REJECTED,
+                        reason="Operation rejected by provider.",
+                    )
+
+                dispatch_data = {
+                    "operation_id": operation.operation_id,
+                    "idempotency_key": operation.operation_id,
+                    "request_payload": {
+                        "operationId": operation.operation_id,
+                        "amount": str(operation.amount),
+                        "currency": operation.currency.value,
+                        "description": operation.description,
+                    },
+                }
+
+                next_event_id = await self.event_repo.get_next_event_id(
+                    operation_id=operation_id
+                )
+
+                event_data = {
+                    "operation_id": operation.operation_id,
+                    "event_id": next_event_id,
+                    "event_type": OperationStatus.PROCESSING,
+                    "from_status": operation.status,
+                    "to_status": OperationStatus.PROCESSING,
+                    "message": "Operation in processing.",
+                }
+
+                updated_operation = await self.operation_repo.update_status(
+                    operation=operation, new_status=OperationStatus.PROCESSING
+                )
+                await self.dispatch_repo.create(dispatch_data=dispatch_data)
+                await self.event_repo.create(event_data)
+
+                return updated_operation
+        except IntegrityError as exc:
+            raise OperationSubmitConflict() from exc
