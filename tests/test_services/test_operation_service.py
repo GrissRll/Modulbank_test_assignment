@@ -65,7 +65,11 @@ def operation_data():
 
 @pytest.mark.asyncio
 async def test_register_operation_creates_commits_and_returns_operation(
-    service, db_session, operation_repository, operation_data
+    service,
+    db_session,
+    operation_repository,
+    event_repository,
+    operation_data,
 ):
     operation = Operation(
         operation_id=operation_data.operation_id,
@@ -82,13 +86,27 @@ async def test_register_operation_creates_commits_and_returns_operation(
     assert result is operation
     operation_repository.get_operation_by_id.assert_awaited_once_with("operation-1")
     operation_repository.create.assert_awaited_once_with(operation_data.model_dump())
+    event_repository.create.assert_awaited_once_with(
+        {
+            "operation_id": "operation-1",
+            "event_id": 1,
+            "event_type": OperationStatus.CREATED,
+            "from_status": None,
+            "to_status": OperationStatus.CREATED,
+            "message": "Operation created.",
+        }
+    )
     db_session.commit.assert_awaited_once_with()
     db_session.rollback.assert_not_awaited()
 
 
 @pytest.mark.asyncio
 async def test_register_operation_raises_when_operation_already_exists(
-    service, db_session, operation_repository, operation_data
+    service,
+    db_session,
+    operation_repository,
+    event_repository,
+    operation_data,
 ):
     operation_repository.get_operation_by_id.return_value = Operation(
         operation_id="operation-1",
@@ -100,13 +118,18 @@ async def test_register_operation_raises_when_operation_already_exists(
         await service.register_operation(operation_data)
 
     operation_repository.create.assert_not_awaited()
+    event_repository.create.assert_not_awaited()
     db_session.commit.assert_not_awaited()
     db_session.rollback.assert_not_awaited()
 
 
 @pytest.mark.asyncio
 async def test_register_operation_rolls_back_integrity_error(
-    service, db_session, operation_repository, operation_data
+    service,
+    db_session,
+    operation_repository,
+    event_repository,
+    operation_data,
 ):
     integrity_error = IntegrityError(
         statement="INSERT INTO operations ...",
@@ -120,6 +143,50 @@ async def test_register_operation_rolls_back_integrity_error(
         await service.register_operation(operation_data)
 
     assert exc_info.value.__cause__ is integrity_error
+    event_repository.create.assert_not_awaited()
+    db_session.rollback.assert_awaited_once_with()
+    db_session.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_register_operation_rolls_back_when_event_creation_fails(
+    service,
+    db_session,
+    operation_repository,
+    event_repository,
+    operation_data,
+):
+    operation = Operation(
+        operation_id=operation_data.operation_id,
+        amount=operation_data.amount,
+        currency=operation_data.currency,
+        description=operation_data.description,
+        status=OperationStatus.CREATED,
+    )
+    integrity_error = IntegrityError(
+        statement="INSERT INTO operation_events ...",
+        params=None,
+        orig=Exception("duplicate key"),
+    )
+    operation_repository.get_operation_by_id.return_value = None
+    operation_repository.create.return_value = operation
+    event_repository.create.side_effect = integrity_error
+
+    with pytest.raises(OperationExistingError) as exc_info:
+        await service.register_operation(operation_data)
+
+    assert exc_info.value.__cause__ is integrity_error
+    operation_repository.create.assert_awaited_once_with(operation_data.model_dump())
+    event_repository.create.assert_awaited_once_with(
+        {
+            "operation_id": "operation-1",
+            "event_id": 1,
+            "event_type": OperationStatus.CREATED,
+            "from_status": None,
+            "to_status": OperationStatus.CREATED,
+            "message": "Operation created.",
+        }
+    )
     db_session.rollback.assert_awaited_once_with()
     db_session.commit.assert_not_awaited()
 

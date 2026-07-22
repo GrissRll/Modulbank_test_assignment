@@ -111,27 +111,16 @@ async def test_get_operation_events_returns_200_and_ordered_events(
     )
     occurred_at = datetime(2030, 1, 1, 12, 30, tzinfo=timezone.utc)
     async with async_session_maker() as session:
-        session.add_all(
-            [
-                OperationEvent(
-                    operation_id="operation-events",
-                    event_id=2,
-                    event_type=OperationStatus.PROCESSING,
-                    from_status=OperationStatus.CREATED,
-                    to_status=OperationStatus.PROCESSING,
-                    message="Operation processing started",
-                    occurred_at=occurred_at,
-                ),
-                OperationEvent(
-                    operation_id="operation-events",
-                    event_id=1,
-                    event_type=OperationStatus.CREATED,
-                    from_status=None,
-                    to_status=OperationStatus.CREATED,
-                    message="Operation created",
-                    occurred_at=occurred_at,
-                ),
-            ]
+        session.add(
+            OperationEvent(
+                operation_id="operation-events",
+                event_id=2,
+                event_type=OperationStatus.PROCESSING,
+                from_status=OperationStatus.CREATED,
+                to_status=OperationStatus.PROCESSING,
+                message="Operation processing started",
+                occurred_at=occurred_at,
+            )
         )
         await session.commit()
 
@@ -139,30 +128,32 @@ async def test_get_operation_events_returns_200_and_ordered_events(
 
     assert create_response.status_code == 201
     assert response.status_code == 200
-    assert response.json() == [
-        {
-            "operation_id": "operation-events",
-            "event_id": 1,
-            "event_type": "CREATED",
-            "from_status": None,
-            "to_status": "CREATED",
-            "message": "Operation created",
-            "occurred_at": "2030-01-01T12:30:00Z",
-        },
-        {
-            "operation_id": "operation-events",
-            "event_id": 2,
-            "event_type": "PROCESSING",
-            "from_status": "CREATED",
-            "to_status": "PROCESSING",
-            "message": "Operation processing started",
-            "occurred_at": "2030-01-01T12:30:00Z",
-        },
-    ]
+    events = response.json()
+    assert len(events) == 2
+    created_event = events[0]
+    created_at = created_event.pop("occurred_at")
+    assert datetime.fromisoformat(created_at.replace("Z", "+00:00")).tzinfo is not None
+    assert created_event == {
+        "operation_id": "operation-events",
+        "event_id": 1,
+        "event_type": "CREATED",
+        "from_status": None,
+        "to_status": "CREATED",
+        "message": "Operation created.",
+    }
+    assert events[1] == {
+        "operation_id": "operation-events",
+        "event_id": 2,
+        "event_type": "PROCESSING",
+        "from_status": "CREATED",
+        "to_status": "PROCESSING",
+        "message": "Operation processing started",
+        "occurred_at": "2030-01-01T12:30:00Z",
+    }
 
 
 @pytest.mark.asyncio
-async def test_get_operation_events_returns_empty_list(client):
+async def test_get_operation_events_returns_created_event(client):
     create_response = await client.post(
         "/operations/", json=operation_payload("operation-without-events")
     )
@@ -171,7 +162,19 @@ async def test_get_operation_events_returns_empty_list(client):
 
     assert create_response.status_code == 201
     assert response.status_code == 200
-    assert response.json() == []
+    events = response.json()
+    assert len(events) == 1
+    created_event = events[0]
+    created_at = created_event.pop("occurred_at")
+    assert datetime.fromisoformat(created_at.replace("Z", "+00:00")).tzinfo is not None
+    assert created_event == {
+        "operation_id": "operation-without-events",
+        "event_id": 1,
+        "event_type": "CREATED",
+        "from_status": None,
+        "to_status": "CREATED",
+        "message": "Operation created.",
+    }
 
 
 @pytest.mark.asyncio
